@@ -13,13 +13,15 @@ import random
 import torch.utils.data
 import sys
 from unet_parts import *
-from scipy.misc import imsave
-from torch.nn import BCELoss as adversarial_loss
+from imageio import imwrite as imsave
+from torch.nn import BCELoss
 import ast
 
 from rGAN import Generator, Discriminator
 from dataset import TrainingDataset
 from utils import createEpochData, roll_axis, loss_function, create_folder, prep_data
+
+adversarial_loss  = BCELoss()
 
 def Load_Dataloader(train_path_list, tf, batch_size):
     train_data = TrainingDataset(train_path_list, tf)
@@ -33,14 +35,13 @@ def overall_generator_pass(generator, discriminator, img, gt, valid):
     imgs = recon_batch.data.cpu().numpy()[0, :]
     imgs = roll_axis(imgs)
     loss= msssim+f1
-    G_loss = adversarial_loss(discriminator(recon_batch),valid)
-    g_loss = adversarial_loss(discriminator(recon_batch),valid).weight + loss
+    g_loss = adversarial_loss(discriminator(recon_batch),valid) + loss
     return imgs, g_loss, recon_batch, loss, msssim
 
 def overall_discriminator_pass(discriminator, recon_batch, gt, valid, fake):
     real_loss = adversarial_loss(discriminator(gt), valid)
     fake_loss = adversarial_loss(discriminator(recon_batch.detach()), fake)
-    d_loss = (real_loss.weight + fake_loss.weight) / 2
+    d_loss = (real_loss + fake_loss) / 2
     return d_loss
 
 def meta_update_model(model, optimizer, loss, gradients):
@@ -193,11 +194,11 @@ def main(k_shots, num_tasks, adam_betas, gen_lr, dis_lr, total_epochs, model_fol
                 # Compute Validation Grad
                 print("Memory Allocated: ",torch.cuda.memory_allocated()/1e9)
 
-                generator.load_state_dict(torch.load(previous_generator))
-                discriminator.load_state_dict(torch.load(previous_discriminator))
-
                 gen_grads = torch.autograd.grad(gen_validation_loss, generator.parameters())
                 dis_grads = torch.autograd.grad(dis_validation_loss, discriminator.parameters())
+                
+                generator.load_state_dict(torch.load(previous_generator))
+                discriminator.load_state_dict(torch.load(previous_discriminator))                
 
                 gen_meta_grads = {name:g for ((name, _), g) in zip(generator.named_parameters(), gen_grads)}
                 dis_meta_grads = {name:g for ((name, _), g) in zip(discriminator.named_parameters(), dis_grads)}
