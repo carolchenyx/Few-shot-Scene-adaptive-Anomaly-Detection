@@ -8,16 +8,10 @@ import torch.optim as optim
 from torch.autograd import Variable
 from torch.utils.data import Dataset,DataLoader
 from torchvision import datasets, transforms, models
-from PIL import Image
-import numpy as np
-import ast
-from torch.nn import functional as F
 import os
 import random
 import torch.utils.data
-import torchvision.utils as vutils
-import torch.backends.cudnn as cudn
-from torch.nn import functional as F
+import sys
 from unet_parts import *
 from scipy.misc import imsave
 from torch.nn import BCELoss as adversarial_loss
@@ -40,13 +34,13 @@ def overall_generator_pass(generator, discriminator, img, gt, valid):
     imgs = roll_axis(imgs)
     loss= msssim+f1
     G_loss = adversarial_loss(discriminator(recon_batch),valid)
-    g_loss = adversarial_loss(discriminator(recon_batch),valid) + loss
+    g_loss = adversarial_loss(discriminator(recon_batch),valid).weight + loss
     return imgs, g_loss, recon_batch, loss, msssim
 
 def overall_discriminator_pass(discriminator, recon_batch, gt, valid, fake):
     real_loss = adversarial_loss(discriminator(gt), valid)
     fake_loss = adversarial_loss(discriminator(recon_batch.detach()), fake)
-    d_loss = (real_loss + fake_loss) / 2
+    d_loss = (real_loss.weight + fake_loss.weight) / 2
     return d_loss
 
 def meta_update_model(model, optimizer, loss, gradients):
@@ -102,7 +96,7 @@ def main(k_shots, num_tasks, adam_betas, gen_lr, dis_lr, total_epochs, model_fol
     previous_generator = generator_path
     previous_discriminator = discriminator_path
 
-    frame_path = '/mnt/creeper/grad/luy2/Meta-Learning/data/shanghaitech-5tasks/training/frames/' 
+    frame_path = '/media/hkuit104/24d4ed16-ee67-4121-8359-66a09cede5e7/AbnormalDetection/DATASET/SHT/testing/frames_test/'
 
     # Set Up Training Loop
     for epoch in range(total_epochs):
@@ -150,7 +144,7 @@ def main(k_shots, num_tasks, adam_betas, gen_lr, dis_lr, total_epochs, model_fol
                     d_loss = overall_discriminator_pass(discriminator, recon_batch, gt, valid, fake)
                     d_loss.backward()
                     inner_optimizer_D.step()
-                    print ('Epoch [{}/{}], Step [{}/{}], Reconstruction_Loss: {:.4f}, G_Loss: {:.4f}, D_loss: {:.4f},  msssim:{:.4f} '.format(epoch+1, total_epochs, tidx+1, 5, loss.item(), g_loss, d_loss, msssim))
+                    print ('Epoch [{}/{}], Step [{}/{}], Reconstruction_Loss: {:.4f}, G_Loss: {:.4f}, D_loss: {:.4f},  msssim:{:.4f} '.format(epoch+1, total_epochs, tidx+1, 5, loss.item(), g_loss.item(), d_loss.item(), msssim.item()))
             
                                         # Meta-Validation
                 print ('\n Meta Validation \n')
@@ -193,7 +187,7 @@ def main(k_shots, num_tasks, adam_betas, gen_lr, dis_lr, total_epochs, model_fol
 
                     print("Generator Validation Loss: ", gen_validation_loss_store)
                     print("Discriminator Validation Loss: ", dis_validation_loss_store)
-                    print ('Epoch [{}/{}], Step [{}/{}], G_Loss: {:.4f}, D_loss: {:.4f}'.format(epoch+1, total_epochs, tidx+1, 5, loss.item(), g_loss, d_loss))
+                    print ('Epoch [{}/{}], Step [{}/{}], G_Loss: {:.4f}, D_loss: {:.4f}'.format(epoch+1, total_epochs, tidx+1, 5, loss.item(), g_loss.item(), d_loss.item()))
                     print("Memory Allocated: ",torch.cuda.memory_allocated()/1e9)
 
                 # Compute Validation Grad
@@ -204,7 +198,7 @@ def main(k_shots, num_tasks, adam_betas, gen_lr, dis_lr, total_epochs, model_fol
 
                 gen_grads = torch.autograd.grad(gen_validation_loss, generator.parameters())
                 dis_grads = torch.autograd.grad(dis_validation_loss, discriminator.parameters())
-                
+
                 gen_meta_grads = {name:g for ((name, _), g) in zip(generator.named_parameters(), gen_grads)}
                 dis_meta_grads = {name:g for ((name, _), g) in zip(discriminator.named_parameters(), dis_grads)}
                 
